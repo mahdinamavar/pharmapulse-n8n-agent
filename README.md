@@ -1,28 +1,94 @@
-# PharmaPulse AI Agent
+# 🚀 PharmaPulse — AI Pharma Intelligence Agent
 
-An n8n workflow for monitoring:
-- FDA enforcement data
-- PubMed articles
-- BioPharma Dive news
+PharmaPulse is an AI-powered automation agent built with **n8n** that continuously monitors pharmaceutical data sources and turns raw information into **high-signal, actionable insights**.
 
-It normalizes data, deduplicates items, prioritizes important updates, sends selected articles to AI for summarization, and publishes the filtered output.
+It aggregates data from:
+- 🏥 FDA (drug updates & approvals)
+- 🔬 PubMed (latest research)
+- 💊 BioPharma news
 
-## Files
-- `workflows/My_workflow_fixed.json` → main n8n workflow
-- `assets/pharmapulse-ai-profile.png` → project avatar/logo
+Then uses AI to **filter noise, normalize data, and generate concise summaries** — so you only see what actually matters.
 
-## Required credentials
-- Google Sheets
-- Gmail
-- Telegram
-- AvalAI / OpenAI-compatible API key
+---
 
-## Import into n8n
-1. Download the workflow JSON
-2. Import it into n8n
-3. Reconnect credentials
-4. Add your API key in the GPT node
-5. Test before activating schedule
+## ✨ Features
 
-## Important
-Do not commit API keys, OAuth secrets, or personal credentials.
+- ⚡ Real-time data aggregation from multiple pharma sources  
+- 🧠 AI-powered filtering & summarization (GPT-based)  
+- 🔄 Deduplication & normalization pipeline  
+- 📊 Clean, structured output ready for publishing or analysis  
+- 🔌 Built entirely with n8n (low-code / automation-first)
+
+---
+
+## 🧱 Workflow Overview
+
+```
+Sources (FDA / PubMed / BioPharma)
+        ↓
+Normalization & Cleaning
+        ↓
+Deduplication
+        ↓
+AI Filtering (GPT)
+        ↓
+Summarization
+        ↓
+Final Output / Publishing
+```
+
+---
+
+## 🛠 Tech Stack
+
+- **n8n** — workflow automation  
+- **OpenAI / GPT** — content filtering & summarization  
+- **RSS / APIs** — data ingestion  
+- **JavaScript (Function Nodes)** — data processing  
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/mahdinamavar/pharmapulse-n8n-agent.git
+cd pharmapulse-n8n-agent
+```
+
+### 2. Import workflow into n8n
+- Open n8n  
+- Go to **Workflows**  
+- Click **Import**  
+- Upload the workflow JSON file  
+
+### 3. Configure credentials
+Set up:
+- OpenAI API key  
+- Any required API/RSS endpoints  
+
+### 4. Run the workflow
+Execute manually or set a trigger (cron/webhook)
+
+---
+
+## ⚠️ Known Challenges
+
+- ⚖️ AI filtering may drop some valid items (tunable via prompt/limits)  
+- 📉 Rate limits depending on API usage  
+- 🔍 Data variability across sources  
+
+---
+
+## 🎯 Use Cases
+
+- Pharma market monitoring  
+- Research trend tracking  
+- Drug intelligence dashboards  
+- Automated content pipelines  
+
+---
+
+## 🧠 Vision
+
+PharmaPulse aims to become a **real-time pharma intelligence layer** — helping researchers, analysts, and teams stay ahead without drowning in data.
