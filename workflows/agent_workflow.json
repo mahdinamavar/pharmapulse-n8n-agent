@@ -1,0 +1,1021 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const defaults = {\n  summary: '',\n  why_it_matters: '',\n  topic: 'Other',\n  relevance_score: 0,\n  keywords: [],\n  keep_article: false,\n  parse_error: true,\n};\n\nreturn items.map((item, index) => {\n  const original = $('Limit to 15 Articles').all()[index]?.json || {};\n  const raw = item.json?.choices?.[0]?.message?.content || item.json?.output || '';\n\n  let parsed = { ...defaults };\n\n  try {\n    let cleaned = String(raw || '').trim();\n    cleaned = cleaned\n      .replace(/^```json\\s*/i, '')\n      .replace(/^```\\s*/i, '')\n      .replace(/```$/i, '')\n      .trim();\n\n    const firstBrace = cleaned.indexOf('{');\n    const lastBrace = cleaned.lastIndexOf('}');\n    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {\n      cleaned = cleaned.slice(firstBrace, lastBrace + 1);\n    }\n\n    parsed = JSON.parse(cleaned);\n  } catch (error) {\n    parsed = { ...defaults };\n  }\n\n  const relevanceScore = Number(parsed.relevance_score);\n  const keywords = Array.isArray(parsed.keywords)\n    ? parsed.keywords\n    : typeof parsed.keywords === 'string'\n      ? parsed.keywords.split(',').map((value) => value.trim()).filter(Boolean)\n      : [];\n\n  return {\n    json: {\n      ...original,\n      summary: String(parsed.summary || '').trim(),\n      why_it_matters: String(parsed.why_it_matters || '').trim(),\n      topic: String(parsed.topic || 'Other').trim() || 'Other',\n      relevance_score: Number.isFinite(relevanceScore)\n        ? Math.max(0, Math.min(10, relevanceScore))\n        : 0,\n      keywords,\n      keep_article: parsed.keep_article === true,\n      parse_error: parsed.parse_error === true ? true : false,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        384
+      ],
+      "id": "c6ce3e45-237a-4849-ad4c-2efc0114be54",
+      "name": "Parse AI Output"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "4dbc232f-3a90-47e6-9b74-6ce6e505d6ca",
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -656,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "8ebb78a1-b0c3-458b-8e01-eb120dda1fab",
+      "name": "Merge All Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        256,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.biopharmadive.com/feeds/news/",
+        "options": {}
+      },
+      "id": "574432f6-e26a-4eda-a623-da66c06dc117",
+      "name": "BioPharma Dive RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -208,
+        672
+      ],
+      "executeOnce": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const decodeEntities = (text = '') =>\n  String(text || '')\n    .replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;/gi, \"'\");\n\nconst stripHtml = (text = '') =>\n  decodeEntities(text)\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n\nreturn items\n  .map((item) => {\n    const source = item.json || {};\n    const title = String(source.title || source.headline || '').trim();\n    const url = String(source.url || source.link || '').trim();\n    const publishedDate = String(\n      source.published_date ||\n      source.pubDate ||\n      source.date ||\n      source.report_date ||\n      source.recall_initiation_date ||\n      source.pubdate ||\n      ''\n    ).trim();\n\n    const rawText = stripHtml([\n      source.raw_text,\n      source.description,\n      source.summary,\n      source.abstract,\n      source.why_it_matters,\n      source.reason_for_recall,\n      source.product_description,\n    ]\n      .filter(Boolean)\n      .join('\\n'));\n\n    return {\n      json: {\n        ...source,\n        title,\n        url,\n        published_date: publishedDate,\n        raw_text: rawText,\n        source: String(source.source || 'Unknown').trim() || 'Unknown',\n        source_type: String(source.source_type || 'other').trim() || 'other',\n        source_priority: String(source.source_priority || 'medium').trim() || 'medium',\n      },\n    };\n  })\n  .filter((item) => item.json.title || item.json.raw_text || item.json.url);"
+      },
+      "id": "9baab616-be5a-4f3b-a702-9e23159ed2c0",
+      "name": "Normalize Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pattern = /drug safety|pharmacovigilance|clinical ai|artificial intelligence|precision medicine|clinical trial|clinical trials|fda approval|adverse event|medication safety|drug discovery|biotech|pharma|pharmaceutical|recall|enforcement|contamination|sterility|cgmp|warning letter|mislabel|shortage|quality issue/i;\n\nreturn items.filter((item) => {\n  const article = item.json || {};\n  const haystack = `${article.title || ''} ${article.raw_text || ''}`;\n  return article.source_type === 'regulatory' || pattern.test(haystack);\n});"
+      },
+      "id": "4ce25646-8aa1-4b06-a45b-503b226c6a79",
+      "name": "Keyword Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.keep_article }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            },
+            {
+              "id": "2",
+              "leftValue": "={{ $json.parse_error }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0fc1778-d30b-4960-9223-899c683f1928",
+      "name": "Filter Relevant Articles",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1824,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1P5mcFN8ehtF9IPoZiDkQqLRLcQrKCo2nj1s-HMT6VGo",
+          "mode": "list",
+          "cachedResultName": "Pharma Research Agent Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1P5mcFN8ehtF9IPoZiDkQqLRLcQrKCo2nj1s-HMT6VGo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "86a8d18e-0d76-432a-8d34-4aa18dde4c8f",
+      "name": "Get Existing URLs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -432,
+        864
+      ],
+      "alwaysOutputData": false,
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "waN6eNjMunNheFdb",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1P5mcFN8ehtF9IPoZiDkQqLRLcQrKCo2nj1s-HMT6VGo",
+          "mode": "list",
+          "cachedResultName": "Pharma Research Agent Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1P5mcFN8ehtF9IPoZiDkQqLRLcQrKCo2nj1s-HMT6VGo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "title": "={{ $json.title }}",
+            "url": "={{ $json.url }}",
+            "source": "={{ $json.source }}",
+            "published_date": "={{ $json.published_date }}",
+            "summary": "={{ $json.summary }}",
+            "why_it_matters": "={{ $json.why_it_matters }}",
+            "topic": "={{ $json.topic }}",
+            "relevance_score": "={{ $json.relevance_score }}",
+            "keywords": "={{ $json.keywords_clean }}",
+            "run_date": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "url"
+          ],
+          "schema": [
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "why_it_matters",
+              "displayName": "why_it_matters",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "topic",
+              "displayName": "topic",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "relevance_score",
+              "displayName": "relevance_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "keywords",
+              "displayName": "keywords",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "run_date",
+              "displayName": "run_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "461f1301-90f8-4cf9-9944-988b0eede0e2",
+      "name": "Append to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2496,
+        272
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "waN6eNjMunNheFdb",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{$json.relevance_score}}",
+              "rightValue": 7,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "76481922-3b9e-4881-8614-0594e1000869",
+      "name": "Filter High Priority",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2272,
+        592
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "articles",
+        "include": "specifiedFields",
+        "fieldsToInclude": "title, url, summary, relevance_score, topic",
+        "options": {}
+      },
+      "id": "d972e185-0503-4712-9223-660742b82e8b",
+      "name": "Aggregate High Priority",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2704,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "766615688",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "b2272094-5105-4a86-a1f9-4ea1db6b67cb",
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3152,
+        288
+      ],
+      "webhookId": "094d1725-8475-45cf-8721-808e5f5c04aa",
+      "credentials": {
+        "telegramApi": {
+          "id": "gc5IOtfVA3MxaRYD",
+          "name": "Telegram account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "Mahdinamavar003@gmail.com",
+        "subject": "={{ \"Pharma Research Alert - \" + $now.toFormat(\"MMM d, yyyy\") }}",
+        "message": "={{ $json.email_html }}",
+        "options": {
+          "appendAttribution": true
+        }
+      },
+      "id": "8eb52b90-4320-4df1-a8f5-e4c206c6d124",
+      "name": "Send Email Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3152,
+        480
+      ],
+      "webhookId": "eb2dd3f0-f4f0-4ec2-b88f-8b23a2d35b53",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "lM3Md1i5xdWmgrWG",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "db",
+              "value": "pubmed"
+            },
+            {
+              "name": "term",
+              "value": "pharmacovigilance OR \"drug safety\" OR \"clinical ai\" OR \"precision medicine\" OR \"clinical trials\""
+            },
+            {
+              "name": "retmax",
+              "value": "20"
+            },
+            {
+              "name": "sort",
+              "value": "pub_date"
+            },
+            {
+              "name": "retmode",
+              "value": "json"
+            },
+            {
+              "name": "reldate",
+              "value": "30"
+            },
+            {
+              "name": "datetype",
+              "value": "pdat"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "1e807f48-7cda-4c1d-8e6f-2b2d11d04728",
+      "name": "PubMed ESearch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -432,
+        -96
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ \"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=\" + ($json.esearchresult?.idlist || []).join(\",\") + \"&retmode=json\" }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "8dafec68-3e74-4316-ba43-1ffe9dec44a2",
+      "name": "PubMed ESummary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -208,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = items[0]?.json?.result;\nif (!result) return [];\n\nconst uids = Object.keys(result).filter((key) => key !== 'uids');\n\nreturn uids.map((uid) => {\n  const article = result[uid] || {};\n  return {\n    json: {\n      title: article.title || 'No title',\n      url: `https://pubmed.ncbi.nlm.nih.gov/${uid}/`,\n      source: 'PubMed',\n      published_date: article.pubdate || '',\n      raw_text: [\n        article.title || '',\n        article.fulljournalname || '',\n        article.pubtype?.join(', ') || '',\n        article.pubdate || '',\n      ]\n        .filter(Boolean)\n        .join(' '),\n      source_type: 'literature',\n      source_priority: 'high',\n    },\n  };\n});"
+      },
+      "id": "c202f0b4-46a8-4158-9bc7-3414d8de39ad",
+      "name": "Parse PubMed Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function safe(value) {\n  if (value === undefined || value === null) return '';\n  if (Array.isArray(value)) return value.filter(v => v !== undefined && v !== null && v !== '').join(', ');\n  return String(value).trim();\n}\n\nreturn items.map((item) => {\n  const source = item.json || {};\n  const openfda = source.openfda || {};\n\n  const brandName =\n    openfda.brand_name?.[0] ||\n    source.product_description ||\n    source.product_type ||\n    'FDA Enforcement Report';\n\n  const genericName = openfda.generic_name?.[0] || '';\n  const manufacturer = openfda.manufacturer_name?.[0] || source.recalling_firm || '';\n  const recallReason = source.reason_for_recall || '';\n  const productDescription = source.product_description || '';\n  const classification = source.classification || '';\n  const reportDate = source.report_date || source.recall_initiation_date || '';\n  const eventId = source.event_id || '';\n  const recallNumber = source.recall_number || '';\n  const ndc = openfda.product_ndc?.[0] || '';\n\n  const title = [\n    classification ? `[${classification}]` : '',\n    brandName,\n    recallReason ? `- ${recallReason}` : ''\n  ]\n    .join(' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n\n  const query = recallNumber\n    ? `recall_number:\"${recallNumber}\"`\n    : eventId\n    ? `event_id:\"${eventId}\"`\n    : ndc\n    ? `openfda.product_ndc:\"${ndc}\"`\n    : '';\n\n  const url = query\n    ? `https://api.fda.gov/drug/enforcement.json?search=${encodeURIComponent(query)}`\n    : 'https://open.fda.gov/apis/drug/enforcement/';\n\n  const rawText = [\n    `Product: ${safe(productDescription || brandName)}`,\n    genericName ? `Generic: ${safe(genericName)}` : '',\n    manufacturer ? `Manufacturer: ${safe(manufacturer)}` : '',\n    classification ? `Classification: ${safe(classification)}` : '',\n    recallReason ? `Reason: ${safe(recallReason)}` : '',\n    source.status ? `Status: ${safe(source.status)}` : '',\n    source.country ? `Country: ${safe(source.country)}` : '',\n    source.voluntary_mandated ? `Recall Type: ${safe(source.voluntary_mandated)}` : ''\n  ]\n    .filter(Boolean)\n    .join(' | ');\n\n  return {\n    json: {\n      title: title || 'FDA Enforcement Report',\n      url,\n      published_date: reportDate,\n      raw_text: rawText,\n      source: 'FDA',\n      source_type: 'regulatory',\n      source_priority: 'critical',\n      event_id: eventId,\n      recall_number: recallNumber,\n      classification,\n      manufacturer,\n      product_description: productDescription,\n      reason_for_recall: recallReason,\n      status: source.status || '',\n      country: source.country || '',\n      original_payload: source\n    }\n  };\n});"
+      },
+      "id": "c7fc114e-4eeb-4748-82a0-37ae21e1d5fa",
+      "name": "Normalize FDA RSS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "title",
+              "value": "={{ $json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "2",
+              "name": "url",
+              "value": "={{ $json.link }}",
+              "type": "string"
+            },
+            {
+              "id": "3",
+              "name": "published_date",
+              "value": "={{ $json.pubDate || $json.date || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "4",
+              "name": "raw_text",
+              "value": "={{ $json.description || $json.summary || $json[\"content:encoded\"] || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "5",
+              "name": "source",
+              "value": "BioPharma Dive",
+              "type": "string"
+            },
+            {
+              "id": "6",
+              "name": "source_type",
+              "value": "news",
+              "type": "string"
+            },
+            {
+              "id": "7",
+              "name": "source_priority",
+              "value": "medium",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1368d6b-62ea-4400-a077-2ada06086bcb",
+      "name": "Normalize BioPharma RSS",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        32,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.avalai.ir/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_API_KEY
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a pharma research AI. Return ONLY valid JSON.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Analyze this article and return JSON with fields: summary, why_it_matters, topic, relevance_score (0-10), keywords (array), keep_article (true/false).\\n\\nTitle: {{$json.title}}\\n\\nText:\\n{{$json.raw_text}}\"\n    }\n  ],\n  \"temperature\": 0.2\n}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 5000
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1488,
+        592
+      ],
+      "id": "ae9b39d8-c743-4ea2-a93d-3022fed00126",
+      "name": "GPT",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "maxItems": 25
+      },
+      "id": "6885c7df-1329-486d-89fb-b2e6dcb6eb57",
+      "name": "Limit to 15 Articles",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const PRIORITY = { critical: 3, high: 2, medium: 1, low: 0, other: 0 };\n\nconst normalizeUrl = (value = '') => {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const u = new URL(raw.replace(/^http:\\/\\//i, 'https://'));\n    ['utm_source','utm_medium','utm_campaign','utm_term','utm_content','fbclid','gclid','mc_cid','mc_eid'].forEach((key) => {\n      u.searchParams.delete(key);\n    });\n    u.hash = '';\n    return u.toString().replace(/\\/$/, '').toLowerCase();\n  } catch {\n    return raw.replace(/\\/$/, '').toLowerCase();\n  }\n};\n\nconst normalizeText = (value = '') =>\n  String(value || '')\n    .toLowerCase()\n    .replace(/\\s+/g, ' ')\n    .trim();\n\nconst parseDate = (value = '') => {\n  const raw = String(value || '').trim();\n  if (!raw) return 0;\n  if (/^\\d{8}$/.test(raw)) {\n    const iso = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T00:00:00Z`;\n    const ts = Date.parse(iso);\n    return Number.isNaN(ts) ? 0 : ts;\n  }\n  const ts = Date.parse(raw);\n  return Number.isNaN(ts) ? 0 : ts;\n};\n\nlet existingRows = [];\ntry {\n  existingRows = $('Get Existing URLs').all();\n} catch (error) {\n  existingRows = [];\n}\n\nconst existingKeys = new Set();\nfor (const rowItem of existingRows) {\n  const row = rowItem.json || {};\n  const key =\n    normalizeUrl(row.url) ||\n    normalizeText(`${row.source || ''} ${row.title || ''}`);\n  if (key) existingKeys.add(key);\n}\n\nconst seenInRun = new Set();\nconst out = [];\n\nfor (const item of items) {\n  const article = item.json || {};\n  const dedupeKey =\n    normalizeUrl(article.url) ||\n    normalizeText(`${article.source || ''} ${article.title || ''}`);\n\n  if (!dedupeKey) {\n    continue;\n  }\n\n  const alreadyInSheet = existingKeys.has(dedupeKey);\n  const duplicateInRun = seenInRun.has(dedupeKey);\n\n  if (alreadyInSheet || duplicateInRun) {\n    continue;\n  }\n\n  seenInRun.add(dedupeKey);\n\n  out.push({\n    json: {\n      ...article,\n      dedupe_key: dedupeKey,\n      already_in_sheet: alreadyInSheet,\n      duplicate_in_run: duplicateInRun,\n    },\n  });\n}\n\nout.sort((a, b) => {\n  const priorityA = PRIORITY[a.json.source_priority] ?? 0;\n  const priorityB = PRIORITY[b.json.source_priority] ?? 0;\n  if (priorityB !== priorityA) return priorityB - priorityA;\n  return parseDate(b.json.published_date) - parseDate(a.json.published_date);\n});\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        384
+      ],
+      "id": "dd1f8630-aeb8-4a45-971d-a6fb5ad4315e",
+      "name": "Deduplicate & Prioritize"
+    },
+    {
+      "parameters": {
+        "jsCode": "const articles = Array.isArray($json.articles) ? $json.articles : [];\nconst maxTelegramItems = 5;\n\nconst compact = (value = '', max = 220) => {\n  const text = String(value || '').replace(/\\s+/g, ' ').trim();\n  return text.length > max ? `${text.slice(0, max - 1)}…` : text;\n};\n\nconst escapeHtml = (value = '') =>\n  String(value || '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#39;');\n\nconst header = `🧪 Pharma Research Digest\\n${$now.toFormat(\"yyyy-LL-dd HH:mm\")}\\n\\n`;\n\nlet message = header;\nif (!articles.length) {\n  message += 'No new high-priority items found.';\n} else {\n  const visible = articles.slice(0, maxTelegramItems);\n  message += visible\n    .map((article, index) => {\n      return [\n        `${index + 1}. ${article.title || 'No title'}`,\n        `📊 Score: ${article.relevance_score ?? 'N/A'}`,\n        `🏷 Topic: ${article.topic || 'N/A'}`,\n        `🔗 ${article.url || ''}`,\n        `📝 ${compact(article.summary || '', 220)}`,\n      ].join('\\n');\n    })\n    .join('\\n\\n');\n\n  if (articles.length > maxTelegramItems) {\n    message += `\\n\\n… and ${articles.length - maxTelegramItems} more item(s) were saved to Google Sheets.`;\n  }\n}\n\nconst emailHtml =\n  !articles.length\n    ? `<h2>🔬 Pharma Research Digest</h2><p>${$now.toFormat(\"MMMM d, yyyy HH:mm\")}</p><p>No new high-priority items found.</p>`\n    : `<h2>🔬 High Priority Pharma Research</h2><p>${$now.toFormat(\"MMMM d, yyyy HH:mm\")}</p>` +\n      articles\n        .map((article) => {\n          return `<div style=\"margin: 20px 0; padding: 15px; border-left: 4px solid #0066cc;\">\n            <h3>${escapeHtml(article.title || 'No title')}</h3>\n            <p><strong>${escapeHtml(article.topic || 'Other')}</strong> | Relevance: ${escapeHtml(article.relevance_score ?? 'N/A')}/10</p>\n            <p>${escapeHtml(article.summary || '')}</p>\n            <p><a href=\"${escapeHtml(article.url || '')}\">Read more</a></p>\n          </div>`;\n        })\n        .join('');\n\nreturn [\n  {\n    json: {\n      message,\n      email_html: emailHtml,\n      article_count: articles.length,\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        384
+      ],
+      "id": "b682f32d-8176-4253-bdea-4113336bb777",
+      "name": "Format Alerts"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  let keywords = item.json.keywords;\n\n  if (Array.isArray(keywords)) {\n    keywords = keywords.join(\", \");\n  } else if (typeof keywords === \"string\") {\n    keywords = keywords.trim();\n  } else {\n    keywords = \"\";\n  }\n\n  return {\n    json: {\n      ...item.json,\n      keywords_clean: keywords\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        384
+      ],
+      "id": "3d5700a7-18af-4562-a76a-c425afdd3a71",
+      "name": "Format Keywords"
+    },
+    {
+      "parameters": {
+        "url": "https://api.fda.gov/drug/enforcement.json?sort=report_date:desc&limit=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -208,
+        288
+      ],
+      "id": "8d7a30df-950b-4f66-b39f-cd641aaa9fdf",
+      "name": "FDA Drug Enforcement"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "results",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        176
+      ],
+      "id": "27b85898-feb5-4053-99dc-60e9c0475d36",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1c04647e-295d-40a9-b8d5-c66aefe94dc6",
+              "leftValue": "=raw_text ",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1360,
+        384
+      ],
+      "id": "312045fc-4a42-4067-9752-622374435375",
+      "name": "Filter"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get Existing URLs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BioPharma Dive RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "PubMed ESearch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "FDA Drug Enforcement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BioPharma Dive RSS": {
+      "main": [
+        [
+          {
+            "node": "Normalize BioPharma RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PubMed ESearch": {
+      "main": [
+        [
+          {
+            "node": "PubMed ESummary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PubMed ESummary": {
+      "main": [
+        [
+          {
+            "node": "Parse PubMed Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse PubMed Results": {
+      "main": [
+        [
+          {
+            "node": "Merge All Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FDA Drug Enforcement": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Normalize FDA RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize FDA RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge All Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Normalize BioPharma RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge All Sources",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge All Sources": {
+      "main": [
+        [
+          {
+            "node": "Normalize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Fields": {
+      "main": [
+        [
+          {
+            "node": "Keyword Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keyword Filter": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate & Prioritize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate & Prioritize": {
+      "main": [
+        [
+          {
+            "node": "Limit to 15 Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit to 15 Articles": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Output": {
+      "main": [
+        [
+          {
+            "node": "Filter Relevant Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Relevant Articles": {
+      "main": [
+        [
+          {
+            "node": "Format Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Keywords": {
+      "main": [
+        [
+          {
+            "node": "Append to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter High Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter High Priority": {
+      "main": [
+        [
+          {
+            "node": "Aggregate High Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate High Priority": {
+      "main": [
+        [
+          {
+            "node": "Format Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Alerts": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "GPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "aaca399f-ea91-4848-ab45-6593d537cf3a",
+  "meta": {
+    "instanceId": "f5265bb1fa6ef40d7817b3c267cbe09a93b8976f970c410823413627359af4d2"
+  },
+  "id": "eMLdgmTrjV6eJ1fV",
+  "tags": []
+}
